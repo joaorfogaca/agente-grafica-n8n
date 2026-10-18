@@ -1,0 +1,744 @@
+{
+  "name": "Agente de Gráfica",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        1216,
+        2368
+      ],
+      "id": "84c717fc-dad5-4278-8ab0-497a908f24bb",
+      "name": "Telegram Trigger"
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        1664,
+        2368
+      ],
+      "id": "fa17bf45-74f4-492e-877b-e1f937fa6378",
+      "name": "Aggregate"
+    },
+    {
+      "parameters": {
+        "operation": "push",
+        "list": "=List:\n{{ 'chat:' + String($('normalizar').item.json.ID_Chat) }}",
+        "messageData": "={{ JSON.stringify($json.data[0]) }}",
+        "tail": true
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        1888,
+        2368
+      ],
+      "id": "f2b40530-8b87-4ee6-aa90-7120a17e5bf9",
+      "name": "ArmazenarMsg"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "key": "=List:\n{{ 'chat:' + String($('normalizar').item.json.ID_Chat) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        2112,
+        2368
+      ],
+      "id": "ec0813cd-ae78-4e21-beac-199757c87788",
+      "name": "BuscarMsg"
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "key": "=List:\n{{ 'chat:' + String($('normalizar').item.json.ID_Chat) }}"
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        2784,
+        2272
+      ],
+      "id": "56df231d-053d-4982-8ef5-414e5d28963f",
+      "name": "DeleteMsg"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ JSON.parse($json.propertyName[0]).Mensagem }}",
+                    "rightValue": "={{ $('normalizar').item.json.Mensagem }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notEquals"
+                    },
+                    "id": "9ed949eb-53c6-4dd4-a783-38f616b24789"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "NadaFazer"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "01a42279-3053-4d61-95d9-b80fc1ef1c8d",
+                    "leftValue": "={{ JSON.parse($json.propertyName[0]).Data_mensagem }}",
+                    "rightValue": "={{ $now.minus({seconds:20}).toISO() }}",
+                    "operator": {
+                      "type": "dateTime",
+                      "operation": "before"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "avancar"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        2336,
+        2256
+      ],
+      "id": "c786a852-8b90-41a2-8d14-82bb4c29f971",
+      "name": "Switch"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        2560,
+        2080
+      ],
+      "id": "73c30f6a-2979-48cc-870c-91942f43e634",
+      "name": "No Operation, do nothing"
+    },
+    {
+      "parameters": {
+        "amount": 20
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        2560,
+        2464
+      ],
+      "id": "adfd84ad-6996-46d4-b714-7d4a55d20461",
+      "name": "Wait"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $('mensagens').item.json.mensagem }}",
+        "options": {
+          "systemMessage": "=Você é o assistente de orçamento da gráfica.\n\nSua função é consultar a tabela de preços pela ferramenta \"Consultar Preço\" e responder dúvidas sobre valores de produtos e serviços da gráfica.\n\n## LINGUAGEM COM O CLIENTE\n\nO cliente não conhece termos técnicos de gráfica. NUNCA use nas mensagens as palavras \"modelo\", \"enobrecimento\", \"acabamento\", \"4x0\", \"4x1\", \"4x4\", \"1x0\" ou \"1x1\". Fale como o cliente fala: \"tipo de cartão\", \"com verniz brilho\", \"só frente\", \"frente e verso\", \"papel de 90g\", \"quantas páginas\", \"quantas dobras\", \"com serrilha e grampo\".\n\n## REGRAS\n\n1. Sempre consulte a ferramenta antes de informar qualquer preço. Nunca reutilize um preço que apareceu antes na conversa: consulte de novo.\n2. Nunca invente preços, quantidades, produtos, tipos, extras ou condições que não estejam na tabela.\n3. Trate cada conversa como um novo atendimento. Não mencione pedidos ou orçamentos anteriores, a menos que o cliente peça.\n4. Se o cliente ainda não disse o produto, pergunte só qual produto ele quer orçar. Para saber quais existem, chame a ferramenta sem preencher nenhum campo: ela devolve a lista de produtos (status escolher_produto). Liste exatamente esses produtos.\n5. Se o cliente pedir algo que não esteja na tabela, fale somente o que existe.\n6. Responda de forma curta e clara.\n7. Ao informar o preço, use SEMPRE o campo valor_final. Nunca informe custo nem valor sugerido, em nenhuma hipótese.\n8. Não mostre dados internos da tabela, nomes de colunas, links ou detalhes técnicos da ferramenta. A única exceção é o código do produto, que sempre deve aparecer no orçamento.\n9. Se não encontrar o produto na tabela, diga que não encontrou e não tente estimar o valor.\n10. Se o cliente perguntar o que significa algum termo (ex: vinco, serrilha, laminação), explique de forma simples e curta, sem prometer nada que não esteja na tabela. Se não tiver certeza, diga que confirma com a equipe.\n\n## COMO COLETAR AS INFORMAÇÕES\n\nColete só o que faltar, nesta ordem. Nunca pergunte de novo algo que o cliente já informou.\n\nRegra geral: só pergunte uma característica se a ferramenta mostrar mais de uma opção pra ela (campo opcoes_restantes). Se só existir uma, use sem perguntar e mostre no orçamento. Se faltar mais de uma informação, pergunte todas na mesma mensagem, de forma curta.\n\na) PRODUTO. Se o cliente disser só \"bloco\" ou \"folder\", a ferramenta devolve os produtos parecidos: pergunte qual deles.\n\nb) TIPO ESPECÍFICO DO PRODUTO. Se opcoes_restantes.perguntar_modelo for verdadeiro, pergunte primeiro qual ele quer, listando os valores de \"modelos\" exatamente como vieram (ex: para folder, o tipo de dobra; para catálogo, o número de páginas). Ao consultar, envie a escolha no campo modelo.\n\nc) TIPO DE PAPEL. Apresente os \"tipos\" retornados como lista numerada, exatamente como vieram, e pergunte qual ele prefere. Exemplo (cartão de visita):\n\n\"Temos estes tipos de cartão de visita:\n1) Couché 300g - sem verniz/laminação\n2) Couché Brilho 300g - Verniz Total Brilho Frente\n3) Couché Fosco 300g - Laminação Fosca e Verniz Localizado Frente e Verso\nQual você prefere?\"\n\nSe o cliente já informou algo que deixa só um tipo possível, não pergunte: siga em frente. Se ele não souber escolher o papel, explique que quanto maior a gramatura, mais grosso o papel. Ao consultar, envie o material e o verniz/laminação do tipo escolhido (para \"sem verniz/laminação\", envie exatamente isso).\n\nd) TAMANHO. Fale SEMPRE em centímetros (cm), exatamente como a ferramenta devolver (ex: 8,8 × 4,8 cm); nunca converta nem fale em mm. Se a ferramenta mostrar só um tamanho, use sem perguntar. Se houver vários e o cliente não disse, liste e pergunte. Ao consultar, envie o tamanho como o cliente falou ou como veio na lista.\n\ne) QUANTIDADE. Nos blocos e talões a quantidade é em blocos (cada bloco tem 100 folhas, ou 50 jogos nos autocopiativos); pergunte \"quantos blocos\". Nos demais produtos, unidades. Use o campo unidade_quantidade.\n\nf) IMPRESSÃO. Pergunte apenas: \"só frente ou frente e verso?\", a não ser que a ferramenta mostre uma única impressão possível. Se o cliente não falar de cor, considere colorido. Para a ferramenta: só frente = 4x0, frente e verso = 4x4, frente colorida com verso preto e branco = 4x1. Se o cliente pedir preto e branco, uma cor ou cinza: só frente = 1x0, frente e verso = 1x1. Nos blocos e talões o verso normalmente fica em branco: \"frente e verso\" só vale se o cliente quiser personalizar também o verso. Para eles, pergunte: \"quer personalizar só a frente ou também o verso?\". Esses produtos são impressos em uma cor ou escala de cinza: a ferramenta ajusta sozinha, e você informa no orçamento exatamente o que vier em impressao_descricao.\n\ng) ACABAMENTO. Não pergunte. A ferramenta usa o corte padrão sozinha. Só se opcoes_restantes.acabamentos ainda tiver mais de uma opção depois de tudo definido (ex: blocos com ou sem serrilha, grampo ou numeração), pergunte qual ele quer, descrevendo cada opção em palavras simples, e envie a escolha no campo acabamento. Se o cliente pedir um corte específico (ex: cantos arredondados, corte oval), envie no campo acabamento.\n\n## SE O QUE O CLIENTE PEDIU NÃO EXISTIR\n\n- QUANTIDADE que não existe (mesmo que exista uma próxima): não escolha automaticamente. Diga que essa quantidade não está disponível e liste somente as quantidades que existem (campo quantidades_disponiveis).\n- TAMANHO que não existe: não escolha sozinho. Diga que esse tamanho não está disponível pra esse produto, sugira o mais próximo (campo formato_mais_proximo) perguntando se serve, e liste também os outros tamanhos disponíveis (campo formatos_disponiveis). Exemplo: \"Não temos 15 × 21 cm. O mais próximo é 14,8 × 21 cm — serve pra você? Os tamanhos disponíveis são: 10,5 × 14,8 cm, 14,8 × 21 cm e 21 × 29,7 cm.\"\n\n## ORÇAMENTO\n\nQuando a ferramenta devolver status encontrado, envie tudo numa única mensagem neste formato (omita a linha \"Tipo\" se o campo tipo vier vazio, e a linha \"Verniz/Laminação\" se verniz_laminacao vier vazio; na linha de impressão use como título o campo impressao_rotulo e como valor o campo impressao_descricao):\n\n\"📄 ORÇAMENTO — FOLDER\nCódigo: 1001\nTipo: 2 Dobras Sanfona\nPapel: Couché Brilho 150g\nTamanho: 14,8 × 10,5 cm\nImpressão: Frente e verso, coloridos\nAcabamento: Refile\nQuantidade: 500 unidades\nValor: R$ 100,00\"\n\nExemplo para cartão de visita (com verniz):\n\n\"📄 ORÇAMENTO — CARTÃO DE VISITA\nCódigo: 1002\nPapel: Couché Brilho 300g\nVerniz/Laminação: Verniz Total Brilho Frente\nTamanho: 8,8 × 4,8 cm\nImpressão: Frente e verso, coloridos\nAcabamento: Refile\nQuantidade: 1.000 unidades\nValor: R$ 50,00\"\n\nExemplo para bloco (a impressão vira \"Personalização\"):\n\n\"📄 ORÇAMENTO — BLOCO DE RECIBO\nCódigo: 1003\nPapel: Sulfite 75g\nTamanho: 14,8 × 21 cm\nPersonalização: Frente e verso, em escala de cinza\nAcabamento: Blocagem com 100 folhas - 1 Numeração\nQuantidade: 10 blocos\nValor: R$ 75,00\"\n\nSe o campo impressao_tambem_existe não vier vazio, depois do orçamento avise que também existe essa opção de impressão e ofereça refazer o orçamento se ele preferir.\n\nDepois do orçamento, pergunte se o cliente quer adicionar algum extra, listando os extras do campo extras_disponiveis daquele produto. Se o cliente confirmar um extra, avise que esse item entra como um orçamento à parte e não deve ser somado nem calculado automaticamente.\n\n## CONTEXTO DA CONVERSA\n\nVocê está atendendo uma conversa contínua com o cliente. As mensagens anteriores dele fazem parte do contexto atual e devem ser consideradas. Antes de fazer qualquer pergunta, analise a mensagem atual, o histórico e as informações já confirmadas.\n\nExemplo:\n\nCliente: \"Queria saber sobre panfleto 14x20 somente frente 10 mil\"\n\nInformações já conhecidas:\nProduto: panfleto\nTamanho: 14x20 cm\nImpressão: somente frente\nQuantidade: 10.000\n\nSe o cliente disser \"pode ser 10x14,8\", atualize somente o tamanho e NÃO pergunte de novo produto, quantidade ou impressão.\n\nSe o cliente disser \"Ahh e só frente e verso\", considere impressão: frente e verso, e NÃO pergunte de novo.\n\nSe o cliente disser \"1000\", considere quantidade: 1.000.\n\nCom essas informações, consulte a ferramenta \"Consultar Preço\". Só faça uma pergunta quando uma informação realmente necessária estiver faltando. Nunca reinicie a coleta de informações a cada mensagem.\n"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        3072,
+        2272
+      ],
+      "id": "510c708d-e439-4f1d-b27f-2d49f03d527f",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-5-mini"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        3008,
+        2496
+      ],
+      "id": "44ecf5e1-8639-4e88-be3e-ff6f50c9cff7",
+      "name": "OpenAI Chat Model"
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('mensagens').first().json.sessionId }}_{{ $now.toFormat('yyyy-MM-dd') }}",
+        "tableName": "n8n_chat_histories_tele_grafica",
+        "contextWindowLength": 10
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
+      "typeVersion": 1.4,
+      "position": [
+        3136,
+        2496
+      ],
+      "id": "a1afde68-9a47-4f23-8898-bcf2aae1d01b",
+      "name": "Postgres Chat Memory"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "4cd34847-8527-4ea0-948c-df4fef72dfb8",
+              "name": "ID_Chat",
+              "value": "={{ $json.message.chat.id }}",
+              "type": "string"
+            },
+            {
+              "id": "bb260a49-063c-482e-ae50-d59fd0a31794",
+              "name": "Nome",
+              "value": "={{ $json.message.chat.username }}",
+              "type": "string"
+            },
+            {
+              "id": "5685cb57-9cb7-4de7-9dd6-ea3edf1b3621",
+              "name": "Mensagem",
+              "value": "={{ $json.message.text }}",
+              "type": "string"
+            },
+            {
+              "id": "9bd8d67f-fc62-4a2f-954b-74aa139ec73c",
+              "name": "Data_mensagem",
+              "value": "={{ new Date($json.message.date * 1000).toISOString() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1440,
+        2368
+      ],
+      "id": "d5f3856b-72fc-4d06-bcca-dc719ae585e3",
+      "name": "normalizar"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "5c8527a2-e9fe-4c23-9d69-61ebbd35bdae",
+              "name": "mensagem",
+              "value": "={{ $json.propertyName?.map(str => {   try {     const obj = JSON.parse(str);     return obj.Mensagem?.trim()       ?.replace(/^[\"']+/g, '')       ?.replace(/\\s+/g, ' ');   } catch (e) {     return '';   } }).filter(Boolean).join(' ') }}",
+              "type": "string"
+            },
+            {
+              "id": "f123abfe-18d0-4ca8-87d0-8567407e4ede",
+              "name": "sessionId",
+              "value": "={{ $('normalizar').item.json.ID_Chat }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2560,
+        2272
+      ],
+      "id": "a409b22d-9ea3-4a30-8232-fb3d52f36618",
+      "name": "mensagens"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('normalizar').item.json.ID_Chat }}",
+        "text": "={{ $json.respostas }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        4368,
+        2208
+      ],
+      "id": "ab95d817-2b46-479a-a364-245d00ea09c9",
+      "name": "Send a text message"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "095bccf1-fc23-4964-881d-f8c07ab68897",
+              "name": "Mensagem",
+              "value": "={{ $json.output }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3472,
+        2272
+      ],
+      "id": "b68690db-5bfa-48b1-9721-506ad387422e",
+      "name": "armazenar_resposta"
+    },
+    {
+      "parameters": {
+        "jsCode": "const resposta = String($input.first().json.Mensagem ?? '');\n\n// Se for um orçamento, não quebra em partes.\nconst ehOrcamento = /📄|ORÇAMENTO/i.test(resposta);\n\nif (ehOrcamento) {\n  return {\n    json: {\n      respostas: [resposta.trim()]\n    }\n  };\n}\n\n// Abreviações que terminam com ponto e não devem ser tratadas como fim de frase.\nconst abreviacoes = [\"Dr.\", \"Sr.\", \"Sra.\", \"Dra.\", \"Prof.\", \"Srta.\", \"1.\", \"2.\", \"3.\", \"4.\", \"5.\", \"6.\", \"7.\"];\n\nfunction eAbreviacao(palavra) {\n  return abreviacoes.includes(palavra);\n}\n\nfunction dividirResposta(texto) {\n  const partes = texto.split(/(?<=[.!?])\\s(?![\\uD800-\\uDFFF])/);\n\n  let resultado = [];\n  for (let i = 0; i < partes.length; i++) {\n    const parte = partes[i].trim();\n\n    if (i > 0) {\n      const palavras = partes[i - 1].split(\" \");\n      const ultimaPalavra = palavras[palavras.length - 1].trim();\n\n      if (eAbreviacao(ultimaPalavra)) {\n        resultado[resultado.length - 1] += \" \" + parte;\n        continue;\n      }\n    }\n\n    resultado.push(parte);\n  }\n\n  return resultado.filter(parte => parte.length > 0);\n}\n\nconst partesDivididas = dividirResposta(resposta);\n\nreturn {\n  json: {\n    respostas: partesDivididas\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3696,
+        2272
+      ],
+      "id": "be1264e8-b3a1-4fae-a633-6f3057d03d19",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "respostas",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        3920,
+        2272
+      ],
+      "id": "2d5c67eb-1aed-4f58-a733-bbd265303ff7",
+      "name": "Split Out"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        4144,
+        2272
+      ],
+      "id": "dbad555d-e0a3-48ec-a3a7-81e5271386ab",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        4592,
+        2272
+      ],
+      "id": "93874602-16be-4fb8-936e-d7adcc98036a",
+      "name": "Wait1"
+    },
+    {
+      "parameters": {
+        "description": "Consulta a tabela de preços da gráfica. Preencha só os campos que o cliente já informou; deixe os outros vazios. Sem nenhum campo preenchido, devolve a lista de produtos.\n- servico: produto (Cartão de Visita, Folheto/panfleto, Folder, Bloco de Pedido, Bloco e Talão Autocopiativo, Bloco de Recibo, Catálogo Premium)\n- modelo: só quando a ferramenta pedir (perguntar_modelo verdadeiro): tipo de dobra do folder ou número de páginas do catálogo, exatamente como veio em modelos\n- material e enobrecimento: do tipo escolhido pelo cliente (para \"sem verniz/laminação\" envie isso)\n- formato: tamanho em cm, ex: 8,8 x 4,8 cm ou 10x14cm\n- impressao: 4x0 (só frente), 4x4 (frente e verso), 4x1 (frente colorida e verso preto e branco); 1x0 ou 1x1 se o cliente pedir uma cor / preto e branco\n- quantidade: só o número\n- acabamento: só se o cliente pedir um corte ou acabamento específico, ou se a ferramenta listar mais de uma opção e o cliente escolher\nRetorna status: encontrado, varios_resultados (use opcoes_restantes: perguntar_modelo, modelos, tipos, formatos, impressoes, acabamentos, quantidades), formato_nao_encontrado, quantidade_nao_encontrada, nao_encontrado ou escolher_produto.",
+        "workflowId": {
+          "__rl": true,
+          "value": "COLOQUE_AQUI_O_ID_DO_WORKFLOW_CONSULTAR_PRECO",
+          "mode": "id"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "servico": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('servico', ``, 'string') }}",
+            "enobrecimento": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('enobrecimento', ``, 'string') }}",
+            "acabamento": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('acabamento', ``, 'string') }}",
+            "impressao": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('impressao', ``, 'string') }}",
+            "gramatura": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('gramatura', ``, 'string') }}",
+            "material": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('material', ``, 'string') }}",
+            "quantidade": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('quantidade', ``, 'string') }}",
+            "formato": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('formato', ``, 'string') }}",
+            "modelo": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('modelo', ``, 'string') }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "servico",
+              "displayName": "servico",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "modelo",
+              "displayName": "modelo",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "formato",
+              "displayName": "formato",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "quantidade",
+              "displayName": "quantidade",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "material",
+              "displayName": "material",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "gramatura",
+              "displayName": "gramatura",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "impressao",
+              "displayName": "impressao",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "acabamento",
+              "displayName": "acabamento",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "enobrecimento",
+              "displayName": "enobrecimento",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        3264,
+        2496
+      ],
+      "id": "cf284a3c-3d83-4803-9b89-b2cb4c70486e",
+      "name": "Consultar Preço"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "normalizar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate": {
+      "main": [
+        [
+          {
+            "node": "ArmazenarMsg",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ArmazenarMsg": {
+      "main": [
+        [
+          {
+            "node": "BuscarMsg",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "BuscarMsg": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "No Operation, do nothing",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "mensagens",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "BuscarMsg",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DeleteMsg": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres Chat Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "normalizar": {
+      "main": [
+        [
+          {
+            "node": "Aggregate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "mensagens": {
+      "main": [
+        [
+          {
+            "node": "DeleteMsg",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "armazenar_resposta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "armazenar_resposta": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Split Out",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Send a text message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a text message": {
+      "main": [
+        [
+          {
+            "node": "Wait1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait1": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consultar Preço": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "tags": []
+}

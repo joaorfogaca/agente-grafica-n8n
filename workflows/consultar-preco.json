@@ -1,0 +1,136 @@
+{
+  "name": "Consultar Preço",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "servico"
+            },
+            {
+              "name": "modelo"
+            },
+            {
+              "name": "formato"
+            },
+            {
+              "name": "quantidade"
+            },
+            {
+              "name": "material"
+            },
+            {
+              "name": "gramatura"
+            },
+            {
+              "name": "impressao"
+            },
+            {
+              "name": "acabamento"
+            },
+            {
+              "name": "enobrecimento"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        528,
+        1104
+      ],
+      "id": "93152b3d-e6a0-4226-aaf1-320259751d47",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "COLOQUE_AQUI_O_ID_DA_PLANILHA",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        784,
+        1104
+      ],
+      "id": "b4283ca9-dfda-406d-9c0e-3f9d97474acf",
+      "name": "Download file"
+    },
+    {
+      "parameters": {
+        "operation": "xlsx",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        992,
+        1104
+      ],
+      "id": "35761e2a-fed3-4c68-8424-6808488b1f47",
+      "name": "Extract from File"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Modo: Run Once for All Items\nconst filtros = $('When Executed by Another Workflow').first().json;\nconst linhas = $input.all().map(i => i.json);\n\nconst norm = v => String(v ?? '')\n  .normalize('NFD').replace(/[̀-ͯ]/g, '')\n  .toLowerCase().replace(/\\s+/g, ' ').trim();\n\n// lê coluna ignorando acento/caixa no cabeçalho (CÓDIGO ou CODIGO, etc.)\nconst col = (row, nome) => {\n  const alvo = norm(nome);\n  for (const k of Object.keys(row)) if (norm(k) === alvo) return row[k];\n  return undefined;\n};\n\nconst num = v => {\n  if (typeof v === 'number') return v;\n  const s = String(v ?? '').replace(/[^\\d,.-]/g, '').replace(/\\.(?=\\d{3}(\\D|$))/g, '').replace(',', '.');\n  const n = parseFloat(s);\n  return isNaN(n) ? null : n;\n};\n\nconst preenchido = v => v !== undefined && v !== null && String(v).trim() !== '';\nconst escapaRegex = s => s.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');\n\n// só linhas de dados (ignora nota de rodapé / linhas vazias)\nconst dados = linhas.filter(r => num(col(r, 'CODIGO')) !== null);\nconst unicos = (rows, c) => [...new Set(rows.map(r => col(r, c)).filter(v => preenchido(v)))];\n\n// contém (texto livre): \"couche brilho 300\" acha \"Couché Brilho 300g\"\nconst contem = (valorLinha, filtro) => norm(valorLinha).includes(norm(filtro));\n// começa uma palavra: \"4 paginas\" NÃO acha \"24 Páginas\"; \"2 dobras\" acha \"2 Dobras Sanfona\"\nconst comecaPalavra = (valorLinha, filtro) =>\n  new RegExp('(^|\\\\s)' + escapaRegex(norm(filtro))).test(norm(valorLinha));\n\n// se o texto pedido existe exatamente na tabela, exige igual (evita \"Verniz ... Frente\" pegar \"Verniz ... Frente e Verso\");\n// senão, aceita \"contém\"\nconst valoresExatos = {};\nfor (const c of ['MATERIAL', 'ENOBRECIMENTO', 'ACABAMENTO']) valoresExatos[c] = new Set(unicos(dados, c).map(norm));\nconst casaTexto = (valorLinha, filtro, coluna) =>\n  valoresExatos[coluna].has(norm(filtro)) ? norm(valorLinha) === norm(filtro) : contem(valorLinha, filtro);\n\n// ---------- produto ----------\nconst SINONIMOS_SERVICO = {\n  panfleto: 'folheto', flyer: 'folheto',\n  talao: 'bloco e talao autocopiativo', autocopiativo: 'bloco e talao autocopiativo',\n  recibo: 'bloco de recibo', pedido: 'bloco de pedido',\n  catalogo: 'catalogo premium',\n};\nconst servicosNorm = [...new Set(dados.map(r => norm(col(r, 'SERVICO'))))];\n\n// devolve os produtos da planilha que combinam com o que o cliente disse\nfunction resolverServico(v) {\n  let s = norm(v);\n  if (!s) return { servicos: [], modeloHint: '' };\n  let modeloHint = '';\n  const d = s.match(/(\\d+)\\s*dobras?/);\n  if (d) modeloHint = `${d[1]} dobra`;\n  const p = s.match(/(\\d+)\\s*pag/);\n  if (p) modeloHint = `${p[1]} paginas`;\n  for (const [de, para] of Object.entries(SINONIMOS_SERVICO)) {\n    if (new RegExp('\\\\b' + de + '\\\\b').test(s) && !s.includes(para)) { s = para; break; }\n  }\n  const servicos = servicosNorm.filter(x => s.includes(x) || x.includes(s));\n  return { servicos, modeloHint };\n}\n\n// ---------- tamanho ----------\nfunction normFormato(v) {\n  const m = norm(v).replace(/mm|cm/g, '').replace(/[×*]/g, 'x').replace(/\\s/g, '').match(/(\\d+[.,]?\\d*)x(\\d+[.,]?\\d*)/);\n  if (!m) return null;\n  return [m[1], m[2]].map(n => parseFloat(n.replace(',', '.')));\n}\nconst igual = (x, y) => Math.abs(x - y) < 0.01;\n\n// formatoTabela está sempre em mm; o pedido pode vir em cm (\"10x14cm\"), mm ou sem unidade.\n// exato = mesma orientação (148x210 ≠ 210x148); sem exato, aceita girado.\nfunction casaFormato(formatoTabela, pedido) {\n  const ft = normFormato(formatoTabela), fp = normFormato(pedido);\n  if (!ft || !fp) return { casa: false, exato: false };\n  const p = norm(pedido);\n  const escalas = p.includes('mm') ? [1] : p.includes('cm') ? [10] : [1, 10];\n  let casa = false, exato = false;\n  for (const e of escalas) {\n    const a = fp[0] * e, b = fp[1] * e;\n    if (igual(ft[0], a) && igual(ft[1], b)) { casa = true; exato = true; }\n    else if (igual(ft[0], b) && igual(ft[1], a)) casa = true;\n  }\n  return { casa, exato };\n}\n\n// tamanhos vão pro cliente em cm (\"14,8 × 21 cm\"); a planilha guarda em mm\nconst cmTxt = mm => String(Math.round(mm) / 10).replace('.', ',');\nconst formatoCm = f => { const d = normFormato(f); return d ? `${cmTxt(d[0])} × ${cmTxt(d[1])} cm` : String(f); };\nconst areaFormato = f => { const d = normFormato(f); return d ? d[0] * d[1] : 0; };\nconst formatosCm = lista => [...lista].sort((a, b) => areaFormato(a) - areaFormato(b)).map(formatoCm);\n\n// tamanho pedido -> o da lista mais parecido (aceita girado); sem unidade, número grande = mm, pequeno = cm\nfunction formatoMaisProximo(pedido, listaMm) {\n  const fp = normFormato(pedido);\n  if (!fp || !listaMm.length) return '';\n  const p = norm(pedido);\n  const e = p.includes('mm') ? 1 : p.includes('cm') ? 10 : (Math.max(fp[0], fp[1]) >= 60 ? 1 : 10);\n  const w = fp[0] * e, h = fp[1] * e;\n  let melhor = null, dMelhor = Infinity;\n  for (const f of listaMm) {\n    const d = normFormato(f);\n    if (!d) continue;\n    const dist = Math.min(Math.abs(d[0] - w) + Math.abs(d[1] - h), Math.abs(d[0] - h) + Math.abs(d[1] - w));\n    if (dist < dMelhor) { dMelhor = dist; melhor = f; }\n  }\n  return melhor ? formatoCm(melhor) : '';\n}\n\n// ---------- impressão ----------\nconst IMPRESSAO = {\n  '4x0': { lado: 'frente',       cor: 'colorida', desc: 'Só frente, colorida' },\n  '4x4': { lado: 'frente_verso', cor: 'colorida', desc: 'Frente e verso, coloridos' },\n  '4x1': { lado: 'frente_pb',    cor: 'misto',    desc: 'Frente colorida e verso preto e branco' },\n  '1x0': { lado: 'frente',       cor: 'uma_cor',  desc: 'Só frente, uma cor' },\n  '1x1': { lado: 'frente_verso', cor: 'uma_cor',  desc: 'Frente e verso, escala de cinza' },\n};\nconst infoImp = codigo => IMPRESSAO[norm(codigo)] || { lado: norm(codigo), cor: '', desc: String(codigo ?? '') };\n\n// em bloco/talão o verso normalmente fica em branco: \"frente e verso\" = personalizar também o verso\nconst ehBloco = servico => /^bloco/.test(norm(servico));\nconst DESC_BLOCO = {\n  '1x0': 'Só na frente, em uma cor',\n  '1x1': 'Frente e verso, em escala de cinza',\n  '4x0': 'Só na frente, colorido',\n  '4x4': 'Frente e verso, colorido',\n};\nconst descImp = (codigo, servico) => (ehBloco(servico) && DESC_BLOCO[norm(codigo)]) || infoImp(codigo).desc;\nconst rotuloImp = servico => ehBloco(servico) ? 'Personalização' : 'Impressão';\n\n// \"frente e verso\", \"so frente\", \"4x4\", \"1x1\", \"preto e branco\"... -> lado + código preferido\nfunction lerImpressao(v) {\n  const s = norm(v);\n  if (!s) return null;\n  const cod = s.match(/\\b(4x0|4x1|4x4|1x0|1x1)\\b/);\n  const umaCor = /(preto|cinza|\\bpb\\b|uma cor|1 cor|monocrom)/.test(s);\n  let lado;\n  if (cod) lado = IMPRESSAO[cod[1]].lado;\n  else if (s.includes('verso') && umaCor && /colorid/.test(s)) lado = 'frente_pb';   // \"frente colorida e verso preto e branco\"\n  else if (s.includes('verso')) lado = 'frente_verso';\n  else lado = 'frente';\n  const preferido = cod ? cod[1]\n    : lado === 'frente' ? (umaCor ? '1x0' : '4x0')\n    : lado === 'frente_verso' ? (umaCor ? '1x1' : '4x4')\n    : '4x1';\n  return { lado, preferido, exato: !!cod };\n}\n\n// ---------- quantidade ----------\nfunction normQtde(v) {\n  const s = norm(v);\n  if (!s) return null;\n  const mil = /\\bmil\\b/.test(s);\n  const n = num(s.replace(/\\bmil\\b/, ''));\n  if (n === null) return null;\n  return mil ? n * 1000 : n;\n}\n\n// ---------- tipos / modelo (só o que o cliente precisa escolher) ----------\n// produtos em que o mesmo papel+verniz existe em vários \"modelos\" (dobras do folder, páginas do catálogo)\nconst modeloIndependente = new Set();\n{\n  const grupos = new Map();\n  for (const r of dados) {\n    const k = [col(r, 'SERVICO'), col(r, 'MATERIAL'), col(r, 'ENOBRECIMENTO')].join('|');\n    if (!grupos.has(k)) grupos.set(k, new Set());\n    if (preenchido(col(r, 'MODELO'))) grupos.get(k).add(col(r, 'MODELO'));\n  }\n  for (const [k, s] of grupos) if (s.size > 1) modeloIndependente.add(k.split('|')[0]);\n}\n// produtos que têm verniz/laminação de verdade (bloco não tem: não faz sentido falar disso)\nconst servicoComVerniz = new Set(\n  dados.filter(r => norm(col(r, 'ENOBRECIMENTO')) !== 'sem enobrecimento').map(r => col(r, 'SERVICO'))\n);\n\nconst semEnob = r => norm(col(r, 'ENOBRECIMENTO')) === 'sem enobrecimento' || !preenchido(col(r, 'ENOBRECIMENTO'));\nconst tiposDe = rows => [...new Set(rows.map(r => {\n  const base = String(col(r, 'MATERIAL'));\n  if (!servicoComVerniz.has(col(r, 'SERVICO'))) return base;\n  return `${base} - ${semEnob(r) ? 'sem verniz/laminação' : col(r, 'ENOBRECIMENTO')}`;\n}))];\n\nconst unidadeQtde = servico => /^bloco/.test(norm(servico)) ? 'blocos' : 'unidades';\n\nfunction opcoes(rows) {\n  const servs = unicos(rows, 'SERVICO');\n  const perguntarModelo = servs.some(s => modeloIndependente.has(s)) && unicos(rows, 'MODELO').length > 1;\n  const o = {\n    servicos: servs,\n    perguntar_modelo: perguntarModelo,\n    tipos: tiposDe(rows),\n    formatos: formatosCm(unicos(rows, 'FORMATO')),\n    impressoes: unicos(rows, 'IMPRESSAO').map(c => ({ codigo: c, descricao: descImp(c, servs[0]) })),\n    acabamentos: unicos(rows, 'ACABAMENTO'),\n    quantidades: unicos(rows, 'QTDE').map(Number).sort((a, b) => a - b),\n    unidade_quantidade: unidadeQtde(servs[0]),\n  };\n  if (perguntarModelo) o.modelos = unicos(rows, 'MODELO');\n  return o;\n}\n\n// =================== filtros ===================\nconst f = {\n  servico: filtros.servico, modelo: filtros.modelo, formato: filtros.formato,\n  quantidade: filtros.quantidade, material: filtros.material, gramatura: filtros.gramatura,\n  impressao: filtros.impressao, acabamento: filtros.acabamento, enobrecimento: filtros.enobrecimento,\n};\nconst nenhumFiltro = Object.values(f).every(v => !preenchido(v));\nif (nenhumFiltro) {\n  return [{ json: {\n    status: 'escolher_produto',\n    mensagem: 'Nenhum filtro informado. Estes são os produtos disponíveis.',\n    servicos: unicos(dados, 'SERVICO'),\n  } }];\n}\n\nconst { servicos: servicosAlvo, modeloHint } = resolverServico(f.servico);\nconst modeloFiltro = preenchido(f.modelo) ? f.modelo : modeloHint;\n\n// \"sem verniz\", \"sem laminação\", \"nenhum\" etc. = \"Sem Enobrecimento\" da planilha\nconst enobFiltro = /^(sem|nenhum|nao)\\b/.test(norm(f.enobrecimento)) ? 'sem enobrecimento' : f.enobrecimento;\nconst imp = lerImpressao(f.impressao);\n\n// tudo, menos tamanho e quantidade (esses dois têm tratamento próprio)\nlet base = dados.filter(r => {\n  if (preenchido(f.servico) && !servicosAlvo.includes(norm(col(r, 'SERVICO')))) return false;\n  if (preenchido(modeloFiltro) && !comecaPalavra(col(r, 'MODELO'), modeloFiltro)) return false;\n  if (preenchido(f.material) && !casaTexto(col(r, 'MATERIAL'), f.material, 'MATERIAL')) return false;\n  if (preenchido(f.gramatura)) {\n    const g = String(f.gramatura).replace(/\\D/g, '');\n    if (g && String(col(r, 'GRAMATURA')).replace(/\\D/g, '') !== g) return false;\n  }\n  if (imp && infoImp(col(r, 'IMPRESSAO')).lado !== imp.lado) return false;\n  if (preenchido(f.acabamento) && !casaTexto(col(r, 'ACABAMENTO'), f.acabamento, 'ACABAMENTO')) return false;\n  if (preenchido(f.enobrecimento) && !casaTexto(col(r, 'ENOBRECIMENTO'), enobFiltro, 'ENOBRECIMENTO')) return false;\n  return true;\n});\n\nif (base.length === 0) {\n  const doServico = preenchido(f.servico) ? dados.filter(r => servicosAlvo.includes(norm(col(r, 'SERVICO')))) : [];\n  return [{ json: {\n    status: 'nao_encontrado',\n    mensagem: doServico.length\n      ? 'Esse produto existe, mas nenhuma variação bate com essas características.'\n      : 'Produto não encontrado na tabela.',\n    opcoes_disponiveis: doServico.length ? opcoes(doServico) : { servicos: unicos(dados, 'SERVICO') },\n  } }];\n}\n\nif (preenchido(f.formato)) {\n  const achados = base.map(r => ({ r, ...casaFormato(col(r, 'FORMATO'), f.formato) })).filter(x => x.casa);\n  if (achados.length === 0) {\n    return [{ json: {\n      status: 'formato_nao_encontrado',\n      mensagem: `Tamanho ${f.formato} não disponível para esse produto.`,\n      formato_mais_proximo: formatoMaisProximo(f.formato, unicos(base, 'FORMATO')),\n      formatos_disponiveis: formatosCm(unicos(base, 'FORMATO')),\n    } }];\n  }\n  const exatos = achados.filter(x => x.exato);\n  base = (exatos.length ? exatos : achados).map(x => x.r);\n}\n\nif (preenchido(f.quantidade)) {\n  const q = normQtde(f.quantidade);\n  const porQtde = base.filter(r => num(col(r, 'QTDE')) === q);\n  if (porQtde.length === 0) {\n    return [{ json: {\n      status: 'quantidade_nao_encontrada',\n      mensagem: `Quantidade ${f.quantidade} não disponível para essa combinação.`,\n      quantidades_disponiveis: unicos(base, 'QTDE').map(Number).sort((a, b) => a - b),\n      unidade_quantidade: unidadeQtde(unicos(base, 'SERVICO')[0]),\n    } }];\n  }\n  base = porQtde;\n}\n\n// impressão: se o cliente não disse cor, prefere colorida; se essa não existir no produto, mantém a que existe\nlet impressaoAlternativas = [];\nif (imp) {\n  const pref = base.filter(r => norm(col(r, 'IMPRESSAO')) === imp.preferido);\n  if (pref.length) {\n    // outras opções do mesmo lado que ficaram de fora (ex: existe também \"uma cor\"), pra o agente avisar\n    impressaoAlternativas = [...new Set(base\n      .filter(r => infoImp(col(r, 'IMPRESSAO')).lado === imp.lado && norm(col(r, 'IMPRESSAO')) !== imp.preferido)\n      .map(r => descImp(col(r, 'IMPRESSAO'), col(r, 'SERVICO'))))];\n    base = pref;\n  }\n}\n\n// corte: com o tamanho já definido, se o cliente não pediu nenhum e existe \"Refile\", usa Refile\nif (!preenchido(f.acabamento) && unicos(base, 'FORMATO').length === 1) {\n  const acs = unicos(base, 'ACABAMENTO');\n  if (acs.length > 1 && acs.some(a => norm(a) === 'refile')) {\n    base = base.filter(r => norm(col(r, 'ACABAMENTO')) === 'refile');\n  }\n}\n\n// VALOR FINAL vem direto da planilha (coluna VALOR FINAL)\nconst valorFinal = r => num(col(r, 'VALOR FINAL'));\n\n// com muitas linhas ainda em aberto, não devolve preços (evita o agente cotar uma linha aleatória)\nconst LIMITE = 5;\nconst resultados = base.length <= LIMITE ? base.map(r => ({\n  codigo: num(col(r, 'CODIGO')),\n  produto: col(r, 'SERVICO'),\n  tipo: modeloIndependente.has(col(r, 'SERVICO')) ? col(r, 'MODELO') : '',\n  formato: formatoCm(col(r, 'FORMATO')),\n  material: col(r, 'MATERIAL'),\n  gramatura: col(r, 'GRAMATURA'),\n  verniz_laminacao: semEnob(r) ? '' : col(r, 'ENOBRECIMENTO'),\n  acabamento: col(r, 'ACABAMENTO'),\n  impressao: col(r, 'IMPRESSAO'),\n  impressao_rotulo: rotuloImp(col(r, 'SERVICO')),\n  impressao_descricao: descImp(col(r, 'IMPRESSAO'), col(r, 'SERVICO')),\n  impressao_tambem_existe: impressaoAlternativas,\n  quantidade: num(col(r, 'QTDE')),\n  unidade_quantidade: unidadeQtde(col(r, 'SERVICO')),\n  valor_final: valorFinal(r),\n  extras_disponiveis: col(r, 'EXTRAS_DISPONIVEIS') || '',\n})) : [];\n\nreturn [{ json: {\n  status: base.length === 1 ? 'encontrado' : 'varios_resultados',\n  total: base.length,\n  mostrando: resultados.length,\n  resultados,\n  opcoes_restantes: base.length > 1 ? opcoes(base) : undefined,\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        1104
+      ],
+      "id": "c482aced-ed94-4a93-aa96-fcf83ff3246c",
+      "name": "Code in JavaScript"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Download file",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download file": {
+      "main": [
+        [
+          {
+            "node": "Extract from File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "tags": []
+}
