@@ -1,8 +1,8 @@
 # Agente de Gráfica (n8n)
 
-Bot de orçamento para gráfica, feito no n8n. O cliente conversa pelo Telegram, um agente de IA coleta o que falta (produto, papel, tamanho, quantidade, impressão) e consulta uma tabela de preços para montar o orçamento.
+Bot de orçamento para os funcionários de uma gráfica, feito no n8n. Em vez de consultar os dados dos produtos e montar a mensagem na mão, o funcionário pede pelo Telegram o que o cliente quer. Um agente de IA pergunta só o que falta (produto, papel, tamanho, quantidade, impressão), consulta a tabela de preços e devolve o orçamento pronto.
 
-Montei para uma gráfica. A estrutura base (buffer de mensagens no Redis, resposta dividida em partes, memória no Postgres) vem do que aprendi em curso de n8n, e adaptei para o caso de orçamento.
+Montei para uma gráfica, que usa o bot. A estrutura base (buffer de mensagens no Redis, resposta dividida em partes, memória no Postgres) vem do que aprendi em curso de n8n, e adaptei para o caso de orçamento.
 
 ![Fluxo do agente](docs/fluxo.png)
 
@@ -12,7 +12,7 @@ Montei para uma gráfica. A estrutura base (buffer de mensagens no Redis, respos
 
 1. **Telegram Trigger** recebe a mensagem.
 2. **normalizar** extrai chat, nome, texto e data.
-3. **Redis** guarda as mensagens do cliente numa lista. Se chegam várias seguidas, o fluxo espera 20 segundos e junta tudo antes de responder.
+3. **Redis** guarda as mensagens numa lista. Se chegam várias seguidas, o fluxo espera 20 segundos e junta tudo antes de responder.
 4. **AI Agent** (OpenAI `gpt-5-mini`) recebe a frase completa. Tem memória no Postgres (últimas 10 mensagens, uma sessão por chat e por dia).
 5. A resposta é dividida em frases e enviada uma a uma. Orçamento nunca é dividido: o código detecta e manda inteiro.
 
@@ -24,7 +24,7 @@ Sub-workflow que o agente chama como tool. Baixa uma planilha `.xlsx` do Google 
 Regras do prompt que valem destacar:
 - Sempre consultar a ferramenta antes de falar qualquer preço, nunca reaproveitar um preço antigo da conversa.
 - Informar só o valor final, nunca custo.
-- Falar a língua do cliente ("só frente", "frente e verso") e não o jargão de gráfica (4x0, 4x4).
+- Linguagem simples ("só frente", "frente e verso") em vez do jargão de gráfica (4x0, 4x4).
 
 ## Tecnologias
 
